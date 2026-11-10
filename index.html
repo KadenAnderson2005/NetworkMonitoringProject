@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Monitor Dashboard</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #101827;
+            color: #ffffff;
+            padding: 30px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 35px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        h1 {
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            margin-top: 8px;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 7px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 24px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+        }
+
+        .card h3 {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .number {
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        .devices {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 25px;
+            border: 1px solid #334155;
+        }
+
+        .devices h2 {
+            margin-bottom: 20px;
+        }
+
+        .device {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 0;
+            border-bottom: 1px solid #334155;
+            gap: 15px;
+        }
+
+        .device:last-child {
+            border-bottom: none;
+        }
+
+        .status {
+            padding: 7px 13px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .online {
+            background: #064e3b;
+            color: #34d399;
+        }
+
+        .offline {
+            background: #7f1d1d;
+            color: #fca5a5;
+        }
+
+        .loading {
+            color: #fbbf24;
+        }
+
+        .last-update {
+            color: #94a3b8;
+            font-size: 13px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 15px;
+            }
+
+            h1 {
+                font-size: 23px;
+            }
+        }
+
+        .chart-container {
+    position: relative;
+    width: 100%;
+    height: 320px;
+    margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div>
+            <h1>Network Monitoring</h1>
+            <p class="subtitle">Real-Time Network Status Dashboard</p>
+        </div>
+
+        <button onclick="loadDevices()">Refresh Network</button>
+    </header>
+
+    <section class="stats">
+
+        <div class="card">
+            <h3>Total Devices</h3>
+            <div class="number" id="total">0</div>
+        </div>
+
+        <div class="card">
+            <h3>Devices Online</h3>
+            <div class="number" id="online">0</div>
+        </div>
+
+        <div class="card">
+            <h3>Devices Offline</h3>
+            <div class="number" id="offline">0</div>
+        </div>
+
+    </section>
+
+    <section class="devices" style="margin-bottom: 30px;">
+    <h2>Latency History</h2>
+
+    <p class="subtitle">
+        Network response times over the last 30 measurements
+    </p>
+
+    <div class="chart-container">
+        <canvas id="latency-chart"></canvas>
+    </div>
+</section>
+
+    <section class="devices">
+        <h2>Connected Devices</h2>
+
+        <div id="device-list">
+            <p class="loading">Checking network...</p>
+        </div>
+
+        <p class="last-update" id="last-update">
+            Waiting for first update...
+        </p>
+    </section>
+
+    <script>
+      
+let latencyChart = null;
+
+const latencyLabels = [];
+const latencyHistory = {};
+const MAX_POINTS = 30;
+
+async function loadDevices() {
+    const deviceList = document.getElementById("device-list");
+
+    deviceList.innerHTML =
+        '<p class="loading">Checking network...</p>';
+
+    try {
+        const response = await fetch("/api/devices");
+
+        if (!response.ok) {
+            throw new Error("Network request failed");
+        }
+
+        const devices = await response.json();
+
+        const onlineDevices = devices.filter(
+            device => device.status === "Online"
+        );
+
+        const offlineDevices = devices.filter(
+            device => device.status === "Offline"
+        );
+
+        document.getElementById("total").textContent =
+            devices.length;
+
+        document.getElementById("online").textContent =
+            onlineDevices.length;
+
+        document.getElementById("offline").textContent =
+            offlineDevices.length;
+
+        deviceList.innerHTML = "";
+
+        devices.forEach(device => {
+            const statusClass =
+                device.status === "Online" ? "online" : "offline";
+
+            const responseTime =
+                device.response_time !== null
+                    ? device.response_time + " ms"
+                    : "Unavailable";
+
+            const deviceElement = document.createElement("div");
+            deviceElement.className = "device";
+
+            const name = document.createElement("strong");
+            name.textContent = device.ip;
+
+            const latency = document.createElement("span");
+            latency.textContent = responseTime;
+
+            const status = document.createElement("span");
+            status.className = "status " + statusClass;
+            status.textContent = device.status;
+
+            deviceElement.append(name, latency, status);
+            deviceList.appendChild(deviceElement);
+        });
+
+        // Record the current measurement
+        latencyLabels.push(new Date().toLocaleTimeString());
+
+        // Add a new measurement for each device
+        Object.keys(latencyHistory).forEach(ip => {
+            latencyHistory[ip].push(null);
+        });
+
+        devices.forEach(device => {
+            if (!latencyHistory[device.ip]) {
+                latencyHistory[device.ip] =
+                    Array(latencyLabels.length - 1).fill(null);
+
+                latencyHistory[device.ip].push(null);
+            }
+
+            latencyHistory[device.ip][latencyLabels.length - 1] =
+                device.status === "Online" &&
+                typeof device.response_time === "number"
+                    ? device.response_time
+                    : null;
+        });
+
+        // Keep only the last 30 measurements
+        if (latencyLabels.length > MAX_POINTS) {
+            latencyLabels.shift();
+
+            Object.values(latencyHistory).forEach(points => {
+                points.shift();
+            });
+        }
+
+        // Prepare chart datasets
+        const colors = [
+            "#3b82f6",
+            "#10b981",
+            "#f59e0b",
+            "#a78bfa"
+        ];
+
+        const datasets = Object.keys(latencyHistory).map(
+            (ip, index) => ({
+                label: ip,
+                data: latencyHistory[ip],
+                borderColor: colors[index % colors.length],
+                backgroundColor: colors[index % colors.length],
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.3,
+                fill: false,
+                spanGaps: false
+            })
+        );
+
+        // Create or update the chart
+        if (!latencyChart) {
+            const ctx = document.getElementById("latency-chart");
+
+            latencyChart = new Chart(ctx, {
+                type: "line",
+
+                data: {
+                    labels: latencyLabels,
+                    datasets: datasets
+                },
+
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+
+                    interaction: {
+                        intersect: false,
+                        mode: "index"
+                    },
+
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: "#e2e8f0"
+                            }
+                        }
+                    },
+
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: "#94a3b8",
+                                maxTicksLimit: 8
+                            },
+                            grid: {
+                                color: "rgba(148,163,184,0.12)"
+                            }
+                        },
+
+                        y: {
+                            beginAtZero: true,
+
+                            title: {
+                                display: true,
+                                text: "Response Time (ms)",
+                                color: "#94a3b8"
+                            },
+
+                            ticks: {
+                                color: "#94a3b8"
+                            },
+
+                            grid: {
+                                color: "rgba(148,163,184,0.12)"
+                            }
+                        }
+                    }
+                }
+            });
+
+        } else {
+            latencyChart.data.labels = latencyLabels;
+            latencyChart.data.datasets = datasets;
+            latencyChart.update("none");
+        }
+
+        document.getElementById("last-update").textContent =
+            "Last updated: " + new Date().toLocaleTimeString();
+
+    } catch (error) {
+        deviceList.innerHTML =
+            '<p class="offline">Unable to retrieve network data.</p>';
+
+        console.error(error);
+    }
+}
+
+loadDevices();
+
+setInterval(loadDevices, 10000);
+    </script>
+</body>
+</html>
